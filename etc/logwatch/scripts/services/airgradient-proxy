@@ -1,0 +1,225 @@
+#!/usr/bin/perl
+
+# Copyright (c) 2025 John A Kline
+# See the file LICENSE for your full rights.
+
+
+use strict;
+
+my %counts;
+my %errors;
+
+# keys for individual counts
+my $STARTUPS = 'Startups';
+my $LONG_SENSOR_READS = 'Long Sensor Reads';
+my $SAVED_CURR_READING = 'Saved Curr. Readings';
+my $SAVED_2M_READING = 'Saved 2m Readings';
+my $ARCHIVE_RECORDS_ADDED = 'Archive Records Added';
+my $CONN_TIMEOUTS_RETRYING = 'Conn. timeouts (retrying)';
+my $READ_TIMEOUTS_RETRYING = 'Read timeouts (retrying)';
+my $CONN_TIMEOUTS_SKIPPING = 'Conn. timeouts (skipped reading)';
+my $CONN_REFUSED_SKIPPING = 'Conn. refused (skipped reading)';
+my $CONN_ABORTED_SKIPPING = 'Conn. aborted (skipped reading)';
+my $READ_TIMEOUTS_SKIPPING = 'Read timeouts (skipped reading)';
+my $CONN_BROKEN_SKIPPING = 'Conn. broken (skipped reading)';
+my $CHUNK_ENCODING_ERROR = 'Chunk encoding error (skipped reading)';
+my $JSON_DECODING_ERROR = 'JSON decoding error (skipped reading)';
+my $ARCHIVE_INSERT_ERRORS = 'Archive Insert Errors';
+my $TWO_MINUTE_INSERT_ERRORS = 'Two Minute Insert Errors';
+my $CURRENT_INSERT_ERRORS = 'Current Insert Errors';
+my $TMP_NAME_RESOLUTON_ERRORS = 'Tmp name resolution error (skipped reading)';
+my $NO_ROUTE_TO_HOST_ERRORS = 'No route to host (skipped reading)';
+my $SKIPPED_ARCHIVE_RECORDS = 'Skipped archive records';
+my $SKIPPED_2M_RECORDS = 'Skipped 2 min. records';
+my $CONNECTION_REFUSED_RETRYING = 'Connection refused (retrying)';
+my $CONNECTION_TIMEOUT = 'Connection timed out';
+my $NAME_UNKNOWN = 'Name or service not known';
+my $INSANE_READING_OTHER = 'Insane Reading (Other) (skipped reading)';
+my $INSANE_READING_DISAGREE = 'Insane Reading (Disagree) (skipped reading)';
+my $INSANE_READING_INSTANCE = 'Insane Reading (Bad Inst) (skipped reading)';
+my $INSANE_READING_TIME = 'Insane Reading (Bad Time) (skipped reading)';
+my $NTWK_UNREACHABLE = 'Network Unreachable (skipped reading)';
+
+my $GET_VERSION             = 'get-version';
+my $GET_EARLIEST_TIMESTAMP  = 'get-earliest-timestamp';
+my $FETCH_ARCHIVE_RECORDS   = 'fetch-archive-records';
+my $FETCH_TWO_MINUTE_RECORD = 'fetch-two-minute-record';
+my $FETCH_CURRENT_RECORD    = 'fetch-current-record';
+my $REQUEST_ERRORS          = 'Request Errors';
+
+# any lines that do not match the patterns we define
+my @unmatched = ();
+
+# keep details
+my @archive_insert_errors = ();
+my @current_insert_errors = ();
+my @insane_reading_other_errors = ();
+my @insane_reading_instance_errors = ();
+my @insane_reading_time_errors = ();
+my @insane_reading_disagree_errors = ();
+my @chunk_encoding_errors = ();
+my @json_decoding_errors = ();
+my @two_minute_insert_errors = ();
+my @request_errors = ();
+
+my %itemized = (
+    'Archive Insert Errors'   , \@archive_insert_errors,
+    'Two Minute Insert Errors', \@two_minute_insert_errors,
+    'Current Insert Errors'   , \@current_insert_errors,
+    'Insane Reading (Other) Errors'   , \@insane_reading_other_errors,
+    'Insane Reading (Instance) Errors'   , \@insane_reading_instance_errors,
+    'Insane Reading (Time) Errors'   , \@insane_reading_time_errors,
+    'Insane Reading (Disagree) Errors'   , \@insane_reading_disagree_errors,
+    'Chunk Encoding Errors'   , \@chunk_encoding_errors,
+    'JSON Decoding Errors'    , \@json_decoding_errors,
+    'Request Errors'          , \@request_errors,
+    );
+
+my %summaries = (
+    'counts', \%counts,
+    'errors', \%errors,
+    );
+
+while(defined($_ = <STDIN>)) {
+    chomp;
+    if (/Version *:/) {
+        $counts{$STARTUPS} += 1;
+    } elsif (/Event took longer than expected/) {
+        $errors{$LONG_SENSOR_READS} += 1;
+    } elsif (/Saved current reading/) {
+        $counts{$SAVED_CURR_READING} += 1;
+    } elsif (/Saved two minute reading/) {
+        $counts{$SAVED_2M_READING} += 1;
+    } elsif (/Added record/) {
+        $counts{$ARCHIVE_RECORDS_ADDED} += 1;
+    } elsif (/Could not save archive reading to database/) {
+        push @archive_insert_errors, $_;
+        $errors{$ARCHIVE_INSERT_ERRORS} += 1;
+    } elsif (/Could not save two minute reading to database/) {
+        push @two_minute_insert_errors, $_;
+        $errors{$TWO_MINUTE_INSERT_ERRORS} += 1;
+    } elsif (/Could not save current reading to database/) {
+        push @current_insert_errors, $_;
+        $errors{$CURRENT_INSERT_ERRORS} += 1;
+    } elsif (/Skipping reading because of: ConnectionError\(ReadTimeoutError/) {
+        $errors{$CONN_TIMEOUTS_SKIPPING} += 1;
+    } elsif (/Skipping reading because of: ConnectTimeout.*Caused by ConnectTimeoutError/) {
+        $errors{$CONN_TIMEOUTS_SKIPPING} += 1;
+    } elsif (/Skipping reading because of: ConnectionError.* Connection refused/) {
+        $errors{$CONN_REFUSED_SKIPPING} += 1;
+    } elsif (/Skipping reading because of: ConnectionError.*Connection aborted/) {
+        $errors{$CONN_ABORTED_SKIPPING} += 1;
+    } elsif (/Skipping reading because of: ReadTimeout\(ReadTimeoutError/) {
+        $errors{$READ_TIMEOUTS_SKIPPING} += 1;
+    } elsif (/Skipping reading because of: .*Connection broken: .* IncompleteRead/) {
+        $errors{$CONN_BROKEN_SKIPPING} += 1;
+    } elsif (/Skipping reading because of: .*Failed to establish a new connection: .* Temporary failure in name resolution/) {
+        $errors{$TMP_NAME_RESOLUTON_ERRORS} += 1;
+    } elsif (/Skipping reading because of: .*Failed to establish a new connection: .* No route to host/) {
+        $errors{$NO_ROUTE_TO_HOST_ERRORS} += 1;
+    } elsif (/Skipping archive record because there have been zero readings this archive period/) {
+        $errors{$SKIPPED_ARCHIVE_RECORDS} += 1;
+    } elsif (/Connection refused.*Retrying request/) {
+        $errors{$CONNECTION_REFUSED_RETRYING} += 1;
+    } elsif (/Caused by ConnectTimeoutError/) {
+        $errors{$CONNECTION_TIMEOUT} += 1;
+    } elsif (/ConnectionError\(ReadTimeoutError.*: Retrying request\./) {
+        $errors{$CONN_TIMEOUTS_RETRYING} += 1;
+    } elsif (/ReadTimeout\(ReadTimeoutError.*: Retrying request\./) {
+        $errors{$READ_TIMEOUTS_RETRYING} += 1;
+    } elsif (/Failed to establish a new connection: .* Name or service not known/) {
+        $errors{$NAME_UNKNOWN} += 1;
+    } elsif (/request_error: /) {
+        push @request_errors, $_;
+        $errors{$REQUEST_ERRORS} += 1;
+    } elsif (/get-version: /) {
+        $counts{$GET_VERSION} += 1;
+    } elsif (/fetch-current-record/) {
+        $counts{$FETCH_CURRENT_RECORD} += 1;
+    } elsif (/fetch-two-minute-record/) {
+        $counts{$FETCH_TWO_MINUTE_RECORD} += 1;
+    } elsif (/fetch-archive-records/) {
+        $counts{$FETCH_ARCHIVE_RECORDS} += 1;
+    } elsif (/get-earliest-timestamp: /) {
+        $counts{$GET_EARLIEST_TIMESTAMP} += 1;
+    } elsif (/Skipping reading because of: .* \[Errno 101\] Network is unreachable/) {
+        $errors{$NTWK_UNREACHABLE} += 1;
+    } elsif (/Reading found insane due to:  Sensors disagree wildly for /) {
+        $errors{$INSANE_READING_DISAGREE} += 1;
+        push @insane_reading_disagree_errors, $_;
+    } elsif (/Reading found insane due to:  .* not instance of /) {
+        $errors{$INSANE_READING_INSTANCE} += 1;
+        push @insane_reading_instance_errors, $_;
+    } elsif (/Reading found insane due to:  time_of_reading more than 20s off: /) {
+        $errors{$INSANE_READING_TIME} += 1;
+        push @insane_reading_time_errors, $_;
+    } elsif (/Reading found insane due to:  /) {
+        $errors{$INSANE_READING_OTHER} += 1;
+        push @insane_reading_other_errors, $_;
+    } elsif (/Skipping reading because of: ChunkedEncodingError.*InvalidChunkLength/) {
+        $errors{$CHUNK_ENCODING_ERROR} += 1;
+        push @chunk_encoding_errors, $_;
+    } elsif (/Skipping reading because of: ChunkedEncodingError.*InvalidChunkLength/) {
+    } elsif (/parse_response: .* raised exception JSONDecodeError/) {
+        push @json_decoding_errors, $_;
+    } elsif (/Skipping reading because of: JSONDecodeError/) {
+        $errors{$JSON_DECODING_ERROR} += 1;
+    } elsif (/Skipping two_minute record because there have been zero readings this two minute period\./) {
+        $errors{$SKIPPED_2M_RECORDS} += 1;
+    } elsif (/host:port *:/ ||
+             /conf_file *:/ ||
+             /server_port *:/ ||
+             /db_file *:/ ||
+             /timeout_secs *:/ ||
+             /long_read_secs *:/ ||
+             /pollfreq_secs *:/ ||
+             /pollfreq_offset *:/ ||
+             /arcint_secs *:/ ||
+             /outfile *:/ ||
+             /arcfile *:/ ||
+             /service_name *:/ ||
+             /pidfile *:/ ||
+             /log_to_stdout *:/ ||
+             /Starting .* daemon:/ ||
+             /Stopping .* daemon:/ ||
+             /serve_requests: port: .*, db_file_in: / ||
+             /start_server: port: / ||
+             /RequestType.FETCH_CURRENT_RECORD, / ||
+             /debug *:/) {
+        # ignore
+    } else {
+        push @unmatched, $_;
+    }
+}
+
+foreach my $slabel (sort keys %summaries) {
+    my $s = $summaries{$slabel};
+    if(scalar(keys %$s)) {
+        print "$slabel:\n";
+        foreach my $k (sort keys %$s) {
+            next if $s->{$k} == 0;
+            printf("  %-45s %6d\n", $k, $s->{$k});
+        }
+        print "\n";
+    }
+}
+
+foreach my $k (sort keys %itemized) {
+    report($k, $itemized{$k}) if scalar @{$itemized{$k}} > 0;
+}
+
+report("unmatched lines", \@unmatched) if $#unmatched >= 0;
+
+exit 0;
+
+sub report {
+    my($label, $aref, $href) = @_;
+    print "\n$label:\n";
+    foreach my $x (@$aref) {
+        my $str = $x;
+        if ($href && $href->{$x} > 1) {
+            $str .= " ($href->{$x} times)";
+        }
+        print "  $str\n";
+    }
+}

@@ -32,6 +32,7 @@ from dateutil import tz
 from dateutil.parser import parse
 from enum import Enum
 from json import dumps
+from json import loads
 from time import sleep
 
 from dataclasses import dataclass
@@ -46,6 +47,7 @@ class Event(Enum):
     POLL = 1
     ARCHIVE = 2
 
+# Sample AirGradient One reading
 #{"pm01":0.67,
 # "pm02":0.67,
 # "pm10":0.67,
@@ -72,9 +74,37 @@ class Event(Enum):
 # "bootCount":0,
 # "wifi":-72,
 # "ledMode":"pm",
-# "serialno":"d83bda1b9464",
+# "serialno":"000000000000",
 # "firmware":"3.3.7",
 # "model":"I-9PSL"}
+
+# Sample AirGradient Open Air reading
+#{"pm01":0,
+# "pm02":0,
+# "pm10":0,
+# "pm01Standard":0,
+# "pm02Standard":0,
+# "pm10Standard":0,
+# "pm003Count":57.17,
+# "pm005Count":48.17,
+# "pm01Count":7.83,
+# "pm02Count":0.67,
+# "atmp":23.2,
+# "atmpCompensated":22.29,
+# "rhum":46.05,
+# "rhumCompensated":65.32,
+# "pm02Compensated":0,
+# "rco2":599.33,
+# "tvocIndex":101,
+# "tvocRaw":32378.83,
+# "noxIndex":1,
+# "noxRaw":17800.5,
+# "boot":3,
+# "bootCount":3,
+# "wifi":-73,
+# "serialno":"000000000000",
+# "firmware":"3.3.9",
+# "model":"O-1PST"}
 
 # https://github.com/airgradienthq/arduino/blob/master/docs/local-server.md
 @dataclass
@@ -137,7 +167,7 @@ class Database(object):
 
         create_reading_table: str = ('CREATE TABLE Reading ('
             ' record_type            INTEGER NOT NULL,'
-            ' timestamp              INTEGER NOT NULL,'
+            ' timestamp              REAL NOT NULL,'
             ' serialno               TEXT,'
             ' wifi                   REAL,'
             ' pm01                   REAL,'
@@ -186,13 +216,13 @@ class Database(object):
         self.save_reading(RecordType.ARCHIVE, r)
 
     def save_reading(self, record_type: int, r: Reading) -> None:
-        stamp = int(r.measurementTime.timestamp())
+        stamp = r.measurementTime.timestamp()
         insert_reading_sql = ('INSERT INTO Reading ('
             ' record_type, timestamp, serialno, wifi, pm01, pm02, pm10, pm02Compensated, pm01Standard,'
             ' pm02Standard, pm10Standard, rco2, pm003Count, pm005Count, pm01Count, pm02Count, pm50Count,'
             ' pm10Count, atmp, atmpCompensated, rhum, rhumCompensated, tvocIndex, tvocRaw, noxIndex,'
             ' noxRaw, boot, bootCount, ledMode, firmware, model)'
-            ' VALUES(%d, %d, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r,'
+            ' VALUES(%d, %f, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r,'
                 ' %r, %r, %r, %r, %r, %r, %r, %r, %r);' % (
                 record_type, stamp,
                 r.serialno if r.serialno is not None else 'NULL',
@@ -513,7 +543,8 @@ class Service(object):
             'firmware'        : reading.firmware,
             'model'           : reading.model,
              # "2025-10-25T17:45:00.000Z"
-            'measurementTime' : reading.measurementTime.strftime('%Y-%m-%dT%H:%M:%S.000Z')}
+            #'measurementTime' : reading.measurementTime.strftime('%Y-%m-%dT%H:%M:%S.000Z')}
+            'measurementTime' : reading.measurementTime.strftime('%Y-%m-%dT%H:%M:%S.%fZ')}
 
         return dumps(reading_dict)
 
@@ -758,8 +789,8 @@ def test_compute_avg(reading: Reading) -> None:
         reading1.measurementTime = datetime.now(tz=tz.gettz('UTC')) - timedelta(seconds=15)
         reading2.measurementTime = datetime.now(tz=tz.gettz('UTC'))
 
-        reading1.wifi            = 97
-        reading2.wifi            = 100
+        reading1.wifi            = -71
+        reading2.wifi            = -72
 
         reading1.pm01            = 325
         reading2.pm01            = 347
@@ -836,7 +867,7 @@ def test_compute_avg(reading: Reading) -> None:
         assert avg_reading.measurementTime == reading2.measurementTime, 'Expected measurementTime: %r, got %r.' % (reading2.measurementTime, avg_reading.measurementTime)
 
         assert avg_reading.serialno == reading2.serialno
-        assert avg_reading.wifi == 98 # banker's rounding
+        assert avg_reading.wifi is not None and math.isclose(avg_reading.wifi, -71.5)
         assert avg_reading.pm01 == 336
         assert avg_reading.pm02 is not None and math.isclose(avg_reading.pm02, 225.5)
         assert avg_reading.pm10 is not None and math.isclose(avg_reading.pm10, 412.5)
@@ -856,7 +887,7 @@ def test_compute_avg(reading: Reading) -> None:
         assert avg_reading.rhum is not None and math.isclose(avg_reading.rhum, 64.4)
         assert avg_reading.rhumCompensated is not None and math.isclose(avg_reading.rhumCompensated, 60.4)
         assert avg_reading.tvocIndex == 8
-        assert avg_reading.tvocRaw == 4 # banker's rounding
+        assert avg_reading.tvocRaw is not None and math.isclose(avg_reading.tvocRaw, 4.5)
         assert avg_reading.noxIndex == 13
         assert avg_reading.noxRaw is not None and math.isclose(avg_reading.noxRaw, 10.5)
         assert avg_reading.boot == reading2.boot
@@ -872,7 +903,7 @@ def test_compute_avg(reading: Reading) -> None:
 def create_test_reading(measurementTime: datetime) -> Reading:
     return Reading(
         measurementTime = measurementTime,
-        serialno        = 'd83bda1b9464',
+        serialno        = '000000000000',
         wifi            = -70,
         pm01            = 0.67,
         pm02            = 0.23,
@@ -962,9 +993,9 @@ def test_convert_to_json(reading1: Reading, reading2: Reading) -> None:
         reading = create_test_reading(parse('2019/12/15T03:43:05UTC', tzinfos=tzinfos))
         json_reading: str = Service.convert_to_json(reading)
 
-        expected = '{"measurementTime": "2019-12-15T03:43:05.000Z", "serialno": "12345", "wifi": 98, "pm01": 387, "pm02": 378, "pm10": 66, "pm02Compensated": 201, "pm01Standard": 286, "pm02Standard": 201, "pm10Standard": 376, "rco2": 542, "pm003Count": 37, "pm005Count": 483, "pm01Count": 412, "pm02Count": 117, "pm50Count": 210, "pm10Count": 376, "atmp": 20, "atmpCompensated": 21, "rhum": 33.90, "rhumCompensated": 34.80, "tvocIndex": 9, "tvocRaw": 583, "noxIndex": 7, "noxRaw": 348, "boot": 11, "bootCount": 11, "ledMode": "led_config", "firmware": "v1.0", "model": "foo_model"}'
+        expected = '{"pm01": 0.67, "pm02": 0.23, "pm10": 0.54, "pm01Standard": 0, "pm02Standard": 0, "pm10Standard": 10, "pm003Count": 94.33, "pm005Count": 75.33, "pm01Count": 22.33, "pm02Count": 2.33, "pm50Count": 0, "pm10Count": 0, "pm02Compensated": 0, "atmp": 21.66, "atmpCompensated": 21.66, "rhum": 60.74, "rhumCompensated": 60.74, "rco2": 547, "tvocIndex": 98, "tvocRaw": 32358.67, "noxIndex": 1, "noxRaw": 18311.08, "boot": 14, "bootCount": 14, "wifi": -70, "ledMode": "pm", "serialno": "000000000000", "firmware": "3.3.7", "model": "I-9PSL", "measurementTime": "2019-12-15T03:43:05.000000Z"}'
 
-        assert json_reading == expected, 'Expected json: %s, found: %s' % (expected, json_reading)
+        assert loads(json_reading) == loads(expected), 'Expected json: %s, found: %s' % (expected, json_reading)
         print_passed()
     except Exception as e:
         print_failed(e)

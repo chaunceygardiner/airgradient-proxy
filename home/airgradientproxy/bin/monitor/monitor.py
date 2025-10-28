@@ -215,45 +215,34 @@ class Database(object):
     def save_archive_reading(self, r: Reading) -> None:
         self.save_reading(RecordType.ARCHIVE, r)
 
+    @staticmethod
+    def compose_sql_insert(names: List[str], values: List[Any]) -> str:
+        stmt_a: str = 'INSERT INTO Reading ('
+        stmt_b: str = 'VALUES('
+        first = True
+        for i in range(len(names)):
+            if values[i] is not None:
+                if not first:
+                    stmt_a += ','
+                    stmt_b += ','
+                first = False
+                stmt_a += ' ' + names[i]
+                stmt_b += "%r" % values[i]
+        return stmt_a + ') ' + stmt_b + ');'
+
     def save_reading(self, record_type: int, r: Reading) -> None:
         stamp = r.measurementTime.timestamp()
-        insert_reading_sql = ('INSERT INTO Reading ('
-            ' record_type, timestamp, serialno, wifi, pm01, pm02, pm10, pm02Compensated, pm01Standard,'
-            ' pm02Standard, pm10Standard, rco2, pm003Count, pm005Count, pm01Count, pm02Count, pm50Count,'
-            ' pm10Count, atmp, atmpCompensated, rhum, rhumCompensated, tvocIndex, tvocRaw, noxIndex,'
-            ' noxRaw, boot, bootCount, ledMode, firmware, model)'
-            ' VALUES(%d, %f, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r, %r,'
-                ' %r, %r, %r, %r, %r, %r, %r, %r, %r);' % (
-                record_type, stamp,
-                r.serialno if r.serialno is not None else 'NULL',
-                r.wifi if r.wifi is not None else 'NULL',
-                r.pm01 if r.pm01 is not None else 'NULL',
-                r.pm02 if r.pm02 is not None else 'NULL',
-                r.pm10 if r.pm10 is not None else 'NULL',
-                r.pm02Compensated if r.pm02Compensated is not None else 'NULL',
-                r.pm01Standard if r.pm01Standard is not None else 'NULL',
-                r.pm02Standard if r.pm02Standard is not None else 'NULL',
-                r.pm10Standard if r.pm10Standard is not None else 'NULL',
-                r.rco2 if r.rco2 is not None else 'NULL',
-                r.pm003Count if r.pm003Count is not None else 'NULL',
-                r.pm005Count if r.pm005Count is not None else 'NULL',
-                r.pm01Count if r.pm01Count is not None else 'NULL',
-                r.pm02Count if r.pm02Count is not None else 'NULL',
-                r.pm50Count if r.pm50Count is not None else 'NULL',
-                r.pm10Count if r.pm10Count is not None else 'NULL',
-                r.atmp if r.atmp is not None else 'NULL',
-                r.atmpCompensated if r.atmpCompensated is not None else 'NULL',
-                r.rhum if r.rhum is not None else 'NULL',
-                r.rhumCompensated if r.rhumCompensated is not None else 'NULL',
-                r.tvocIndex if r.tvocIndex is not None else 'NULL',
-                r.tvocRaw if r.tvocRaw is not None else 'NULL',
-                r.noxIndex if r.noxIndex is not None else 'NULL',
-                r.noxRaw if r.noxRaw is not None else 'NULL',
-                r.boot if r.boot is not None else 'NULL',
-                r.bootCount if r.bootCount is not None else 'NULL',
-                r.ledMode if r.ledMode is not None else 'NULL',
-                r.firmware if r.firmware is not None else 'NULL',
-                r.model if r.model is not None else 'NULL'))
+        insert_reading_sql = Database.compose_sql_insert(
+                ['record_type', 'timestamp', 'serialno', 'wifi', 'pm01', 'pm02', 'pm10', 'pm02Compensated',
+                'pm01Standard', 'pm02Standard', 'pm10Standard', 'rco2', 'pm003Count', 'pm005Count',
+                'pm01Count', 'pm02Count', 'pm50Count', 'pm10Count', 'atmp', 'atmpCompensated', 'rhum',
+                'rhumCompensated', 'tvocIndex', 'tvocRaw', 'noxIndex', 'noxRaw', 'boot', 'bootCount',
+                'ledMode', 'firmware', 'model'],
+                [record_type, stamp, r.serialno, r.wifi, r.pm01, r.pm02, r.pm10, r.pm02Compensated,
+                r.pm01Standard, r.pm02Standard, r.pm10Standard, r.rco2, r.pm003Count, r.pm005Count,
+                r.pm01Count, r.pm02Count, r.pm50Count, r.pm10Count, r.atmp, r.atmpCompensated,
+                r.rhum, r.rhumCompensated, r.tvocIndex, r.tvocRaw, r.noxIndex, r.noxRaw, r.boot,
+                r.bootCount, r.ledMode, r.firmware, r.model])
 
         with sqlite3.connect(self.db_file, timeout=15) as conn:
             cursor = conn.cursor()
@@ -512,39 +501,67 @@ class Service(object):
 
     @staticmethod
     def convert_to_json(reading: Reading) -> str:
-        reading_dict: Dict[str, Any] = {
-            'pm01'            : reading.pm01,
-            'pm02'            : reading.pm02,
-            'pm10'            : reading.pm10,
-            'pm01Standard'    : reading.pm01Standard,
-            'pm02Standard'    : reading.pm02Standard,
-            'pm10Standard'    : reading.pm10Standard,
-            'pm003Count'      : reading.pm003Count,
-            'pm005Count'      : reading.pm005Count,
-            'pm01Count'       : reading.pm01Count,
-            'pm02Count'       : reading.pm02Count,
-            'pm50Count'       : reading.pm50Count,
-            'pm10Count'       : reading.pm10Count,
-            'pm02Compensated' : reading.pm02Compensated,
-            'atmp'            : reading.atmp,
-            'atmpCompensated' : reading.atmpCompensated,
-            'rhum'            : reading.rhum,
-            'rhumCompensated' : reading.rhumCompensated,
-            'rco2'            : reading.rco2,
-            'tvocIndex'       : reading.tvocIndex,
-            'tvocRaw'         : reading.tvocRaw,
-            'noxIndex'        : reading.noxIndex,
-            'noxRaw'          : reading.noxRaw,
-            'boot'            : reading.boot,
-            'bootCount'       : reading.bootCount,
-            'wifi'            : reading.wifi,
-            'ledMode'         : reading.ledMode,
-            'serialno'        : reading.serialno,
-            'firmware'        : reading.firmware,
-            'model'           : reading.model,
-             # "2025-10-25T17:45:00.000Z"
-            #'measurementTime' : reading.measurementTime.strftime('%Y-%m-%dT%H:%M:%S.000Z')}
-            'measurementTime' : reading.measurementTime.strftime('%Y-%m-%dT%H:%M:%S.%fZ')}
+        reading_dict: Dict[str, Any] = {}
+        if reading.pm01 is not None:
+            reading_dict['pm01'           ] = reading.pm01
+        if reading.pm02 is not None:
+            reading_dict['pm02'           ] = reading.pm02
+        if reading.pm10 is not None:
+            reading_dict['pm10'           ] = reading.pm10
+        if reading.pm01Standard is not None:
+            reading_dict['pm01Standard'   ] = reading.pm01Standard
+        if reading.pm02Standard is not None:
+            reading_dict['pm02Standard'   ] = reading.pm02Standard
+        if reading.pm10Standard is not None:
+            reading_dict['pm10Standard'   ] = reading.pm10Standard
+        if reading.pm003Count is not None:
+            reading_dict['pm003Count'     ] = reading.pm003Count
+        if reading.pm005Count is not None:
+            reading_dict['pm005Count'     ] = reading.pm005Count
+        if reading.pm01Count is not None:
+            reading_dict['pm01Count'      ] = reading.pm01Count
+        if reading.pm02Count is not None:
+            reading_dict['pm02Count'      ] = reading.pm02Count
+        if reading.pm50Count is not None:
+            reading_dict['pm50Count'      ] = reading.pm50Count
+        if reading.pm10Count is not None:
+            reading_dict['pm10Count'      ] = reading.pm10Count
+        if reading.pm02Compensated is not None:
+            reading_dict['pm02Compensated'] = reading.pm02Compensated
+        if reading.atmp is not None:
+            reading_dict['atmp'           ] = reading.atmp
+        if reading.atmpCompensated is not None:
+            reading_dict['atmpCompensated'] = reading.atmpCompensated
+        if reading.rhum is not None:
+            reading_dict['rhum'           ] = reading.rhum
+        if reading.rhumCompensated is not None:
+            reading_dict['rhumCompensated'] = reading.rhumCompensated
+        if reading.rco2 is not None:
+            reading_dict['rco2'           ] = reading.rco2
+        if reading.tvocIndex is not None:
+            reading_dict['tvocIndex'      ] = reading.tvocIndex
+        if reading.tvocRaw is not None:
+            reading_dict['tvocRaw'        ] = reading.tvocRaw
+        if reading.noxIndex is not None:
+            reading_dict['noxIndex'       ] = reading.noxIndex
+        if reading.noxRaw is not None:
+            reading_dict['noxRaw'         ] = reading.noxRaw
+        if reading.boot is not None:
+            reading_dict['boot'           ] = reading.boot
+        if reading.bootCount is not None:
+            reading_dict['bootCount'      ] = reading.bootCount
+        if reading.wifi is not None:
+            reading_dict['wifi'           ] = reading.wifi
+        if reading.ledMode is not None:
+            reading_dict['ledMode'        ] = reading.ledMode
+        if reading.serialno is not None:
+            reading_dict['serialno'       ] = reading.serialno
+        if reading.firmware is not None:
+            reading_dict['firmware'       ] = reading.firmware
+        if reading.model is not None:
+            reading_dict['model'          ] = reading.model
+
+        reading_dict['measurementTime' ] = reading.measurementTime.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
 
         return dumps(reading_dict)
 

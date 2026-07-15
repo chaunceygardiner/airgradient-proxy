@@ -113,7 +113,7 @@ while(defined($_ = <STDIN>)) {
         $errors{$READ_TIMEOUTS_SKIPPING} += 1;
     } elsif (/Skipping reading because of: .*Connection broken: .* IncompleteRead/) {
         $errors{$CONN_BROKEN_SKIPPING} += 1;
-    } elsif (/Skipping reading because of: .*Failed to establish a new connection: .* Temporary failure in name resolution/) {
+    } elsif (/Skipping reading because of: .* Temporary failure in name resolution/) {
         $errors{$TMP_NAME_RESOLUTON_ERRORS} += 1;
     } elsif (/Skipping reading because of: .*Failed to establish a new connection: .* No route to host/) {
         $errors{$NO_ROUTE_TO_HOST_ERRORS} += 1;

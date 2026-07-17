@@ -1,0 +1,25 @@
+# Copyright (c) 2026 John A Kline
+# See the file LICENSE for your full rights.
+#
+# /home/airgradientproxy is replaced with the actual target directory at
+# install time (see the install script).
+
+[Unit]
+Description=AirGradient proxy daemon
+Documentation=https://github.com/chaunceygardiner/airgradient-proxy
+Wants=network-online.target
+After=network-online.target rsyslog.service
+
+[Service]
+Type=exec
+User=airgradientproxy
+Group=airgradientproxy
+WorkingDirectory=/home/airgradientproxy/bin
+ExecStart=/usr/bin/python3 /home/airgradientproxy/bin/airgradientproxyd /home/airgradientproxy/airgradientproxy.conf
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

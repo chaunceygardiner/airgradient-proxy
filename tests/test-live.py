@@ -260,7 +260,7 @@ def main() -> None:
     service_name  : str = config_dict.get('service-name', 'airgradient-proxy')
     hostname      : str = config_dict.get('hostname', '')
     port          : int = int(config_dict.get('port', 80))
-    timeout_secs  : int = int(config_dict.get('timeout-secs', 25))
+    timeout_secs  : int = int(config_dict.get('timeout-secs', 28))
     long_read_secs: int = int(config_dict.get('long-read-secs', 10))
 
     if not hostname:

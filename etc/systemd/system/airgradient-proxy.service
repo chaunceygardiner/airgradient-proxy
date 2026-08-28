@@ -6,7 +6,7 @@
 
 [Unit]
 Description=AirGradient proxy daemon
-Documentation=https://github.com/chaunceygardiner/airgradient-proxy
+Documentation=https://chaunceygardiner.github.io/airgradient-proxy/ https://github.com/chaunceygardiner/airgradient-proxy
 Wants=network-online.target
 After=network-online.target rsyslog.service
 

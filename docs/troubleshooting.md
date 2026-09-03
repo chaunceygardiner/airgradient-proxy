@@ -181,6 +181,11 @@ filesystem, a database file the `airgradientproxy` user can no longer write
 (often after the file was restored or copied as root), or an unmounted
 volume.  These are logged at critical level and the daemon keeps running.
 
+A record that cannot be saved is lost rather than retried.  For an archive
+record that is deliberate: the period's readings are discarded with it, so
+the next archive record covers its own period only, instead of quietly
+averaging two periods into one.
+
 ## Readings are late, or the log says reads are slow
 
 ```

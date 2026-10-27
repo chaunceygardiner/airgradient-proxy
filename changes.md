@@ -1,6 +1,6 @@
 # airgradient-proxy change history
 
-## 2.2 (pending)
+## 2.2 (10/27/2026)
 
 - CO2 (`rco2`) is served as the median of the last three readings.  The
   sensor's CO2 sometimes jumps, up or down, for exactly one reading, and

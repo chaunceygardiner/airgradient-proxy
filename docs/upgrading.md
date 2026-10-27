@@ -53,8 +53,23 @@ write that is a symlink is skipped, so files symlinked to a source checkout
 keep working.  This includes `airgradientproxy.conf`: a symlinked conf is
 not migrated.
 
-**The database is never touched.**  Your archive history survives upgrades,
-and survives an uninstall too.
+**The database is kept.**  Your archive history survives upgrades, and
+survives an uninstall too.  Upgrading to 2.2 from an earlier release adds
+one column, `rco2Unfiltered`, to the database, once, the first time the
+upgraded daemon starts, and logs:
+
+```
+Added column rco2Unfiltered to the Reading table.
+```
+
+At the same moment the current and two-minute records are cleared, since
+their CO2 is unfiltered, so until the first poll lands (up to one
+[`poll-freq-secs`](configuration.md#poll-freq-secs)) `/measures/current`
+and `/fetch-two-minute-record` answer `{}`.  Archive records written before
+the upgrade are kept, with their CO2 as it was and no `rco2Unfiltered`.  If the column cannot be added, the daemon exits and
+systemd retries it every 10 seconds, each failure in
+`journalctl -u airgradient-proxy`.  Going back to an earlier release is
+safe: it ignores the extra column.
 
 ## What an upgrade restarts
 
@@ -76,4 +91,5 @@ unit automatically: it stops the old daemon, removes the init script and the
 wrapper, and installs, enables and starts the `airgradient-proxy` service.
 The configuration and the database are carried forward unchanged.
 
-Nothing needs to be done by hand, and there is no database migration.
+Nothing needs to be done by hand.  The database is carried forward, with
+the one-time column add described above.

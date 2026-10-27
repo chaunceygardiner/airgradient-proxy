@@ -83,7 +83,8 @@ def create_test_reading(measurementTime: datetime) -> Reading:
         bootCount       = 14,
         ledMode         = 'pm',
         firmware        = '3.3.7',
-        model           = 'I-9PSL')
+        model           = 'I-9PSL',
+        rco2Unfiltered  = 547.0)
 
 def create_open_air_test_reading(measurementTime: datetime) -> Reading:
     """An AirGradient Open Air style reading: no pm50Count/pm10Count (indoor

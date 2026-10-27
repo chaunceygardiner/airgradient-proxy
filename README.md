@@ -17,6 +17,11 @@ Full documentation is in the
 * The sensor's processor is easily overwhelmed.  The proxy absorbs client load and
   queries the sensor at a steady, configurable rate.
 * A spot reading is noisy.  The proxy serves the average of the last two minutes.
+* The sensor's CO2 sometimes jumps for a single reading, and that one reading would
+  otherwise become the day's high or low.  The proxy serves CO2 (`rco2`) as the
+  median of the last three readings, which never passes a lone outlier through, at
+  the cost of serving CO2 about one poll late.  The value as the sensor reported it
+  is kept alongside, as `rco2Unfiltered`.
 * The proxy archives an averaged reading every archive interval, and the sensor keeps
   no history at all.  [weewx-airgradient](https://github.com/chaunceygardiner/weewx-airgradient)
   3.0 and later queries these records to fill in the air quality readings for every
@@ -35,8 +40,8 @@ moment.
 
 ## REST API
 
-* `/measures/current` — identical to querying the device directly; returns the latest
-  reading.
+* `/measures/current` — the same as querying the device directly, except that `rco2`
+  is the median described above; returns the latest reading.
 * `/fetch-current-record` — same as `/measures/current`.
 * `/fetch-two-minute-record` — returns an average of the readings from the last two
   minutes.
@@ -55,7 +60,8 @@ moment.
 Arguments are separated by commas, not ampersands.  The JSON returned matches what the
 AirGradient device itself serves (see the
 [AirGradient local server spec](https://github.com/airgradienthq/arduino/blob/master/docs/local-server.md)
-for the fields); the proxy adds a `measurementTime` field.  See the
+for the fields); the proxy adds a `measurementTime` field and an `rco2Unfiltered`
+field (CO2 as the sensor reported it, before the median).  See the
 [manual](https://chaunceygardiner.github.io/airgradient-proxy/) for actual
 responses and the error messages.
 
@@ -141,6 +147,11 @@ Re-running the script upgrades in place, without prompting:
   changed nothing leaves the running daemon alone.
 * An installation that used the old SysV init script (pre-2.0) is migrated to the
   systemd unit automatically.
+* The database is kept.  2.2 adds one column, `rco2Unfiltered`, to a database made by
+  an earlier release, once, when the upgraded daemon first starts; the log says
+  `Added column rco2Unfiltered to the Reading table.`  The current and two-minute
+  records are cleared then too (their CO2 is unfiltered) and come back with the first
+  poll; archive history is kept.
 
 To uninstall (the target directory, with its configuration and database, is left in
 place):
@@ -200,6 +211,6 @@ documented in the
 
 ```sh
 tests/test-install             # install script tests; runs unprivileged in a sandbox
-python3 tests/test-monitor.py  # offline tests: database, fetch semantics, REST parsing
+python3 tests/test-monitor.py  # offline tests: database, REST parsing, CO2 median, the polling loop
 python3 tests/test-live.py     # live tests against a real sensor (hostname from the conf)
 ```

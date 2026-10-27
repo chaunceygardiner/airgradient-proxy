@@ -64,7 +64,7 @@ way to confirm what it is really running with (`debug`, `log_to_stdout`,
 `conf_file` and `pidfile` are logged too, before and after these):
 
 ```
-Version        : 2.1
+Version        : 2.2
 host:port      : airgradient-indoor:80
 server_port    : 8080
 timeout_secs   : 28
@@ -129,6 +129,13 @@ sudo -u airgradientproxy /home/airgradientproxy/bin/airgradientproxyd --dump \
 ----------------------------
 Reading(measurementTime=datetime.datetime(2026, 8, 27, 13, 8, 0, 75227, tzinfo=tzfile('/usr/share/zoneinfo/UTC')), serialno='d83bda1b9464', wifi=-44.0, pm01=0.0, pm02=0.0, ...)
 ```
+
+{: .note }
+On a database made by a release before 2.2, `--dump` first adds the
+`rco2Unfiltered` column, just as a start of the daemon would, so it needs
+write access to the database file.  Like a start, that also clears the
+current and two-minute records, so the first such dump shows no current
+reading.
 
 {: .note }
 `--dump` logs the same startup block as a real start before it dumps, so it

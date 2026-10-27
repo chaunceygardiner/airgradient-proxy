@@ -77,9 +77,16 @@ give them different `server-port` values.
 How often the sensor is polled, in seconds.  Polls land on multiples of this
 value, so `30` means polls at :00 and :30 of every minute.
 
-This is also the resolution of everything downstream: the two-minute average
-is computed from the polls in the last two minutes, and an archive record is
-the average of the polls in its archive interval.
+This is also the resolution of everything downstream: the two-minute record
+is averaged from the polls in the last two minutes, and an archive record
+from the polls in its archive interval.
+
+It also sets the CO2 median's timing (see
+[CO2](rest-api.md#co2-rco2-and-rco2unfiltered)).  CO2 is served about one
+poll late, and a reading stops counting toward the median once it is older
+than 120 seconds or three polls, whichever is longer, plus half a poll (135
+seconds at `30`).  At `30`, two missed polls in a row keep the median going;
+three withhold CO2 for the next two readings.
 
 ## poll-freq-offset
 
@@ -98,8 +105,12 @@ Leave it at `0` on the first proxy.
 **Default:** `300`
 **Install option:** `--archive-interval <secs>`
 
-How often an archive record is written to the database, in seconds.  The
-record is the average of every sane reading taken during the interval.
+How often an archive record is written to the database, in seconds.  Each
+field of the record is the average of the sane readings taken during the
+interval that carry that field, so a reading that lacks one (the sensor
+omits CO2 when its CO2 sensor returns an invalid value, say) does not empty
+that field for the whole record.  A field is missing from the record only
+when no reading in the interval had it.
 
 {: .important }
 This must be a multiple of [`poll-freq-secs`](#poll-freq-secs).  The install

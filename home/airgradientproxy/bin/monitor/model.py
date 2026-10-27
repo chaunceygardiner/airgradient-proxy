@@ -84,7 +84,7 @@ class Reading:
     pm01Standard    : Optional[float] # PM1.0 in ug/m3 (standard particle)
     pm02Standard    : Optional[float] # PM2.5 in ug/m3 (standard particle)
     pm10Standard    : Optional[float] # PM10 in ug/m3 (standard particle)
-    rco2            : Optional[float] # CO2 in ppm
+    rco2            : Optional[float] # CO2 in ppm: the median of the last 3 readings (see Service.co2_median)
     pm003Count      : Optional[float] # Particle count 0.3um per dL
     pm005Count      : Optional[float] # Particle count 0.5um per dL
     pm01Count       : Optional[float] # Particle count 1.0um per dL
@@ -104,6 +104,7 @@ class Reading:
     ledMode         : Optional[str  ] # Current configuration of the LED mode
     firmware        : Optional[str  ] # Current firmware version
     model           : Optional[str  ] # Current model name
+    rco2Unfiltered  : Optional[float] # CO2 in ppm as the monitor reported it (rco2 is the rolling median)
 
 class RecordType:
     CURRENT   : int = 0
@@ -148,6 +149,8 @@ def convert_to_json(reading: Reading) -> str:
         reading_dict['rhumCompensated'] = reading.rhumCompensated
     if reading.rco2 is not None:
         reading_dict['rco2'           ] = reading.rco2
+    if reading.rco2Unfiltered is not None:
+        reading_dict['rco2Unfiltered' ] = reading.rco2Unfiltered
     if reading.tvocIndex is not None:
         reading_dict['tvocIndex'      ] = reading.tvocIndex
     if reading.tvocRaw is not None:

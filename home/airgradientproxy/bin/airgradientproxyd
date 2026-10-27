@@ -24,7 +24,7 @@ from monitor.service import Service
 
 import server.server
 
-AIRGRADIENT_PROXY_VERSION = "2.1"
+AIRGRADIENT_PROXY_VERSION = "2.2"
 
 class CantOpenConfigFile(Exception):
     pass
@@ -113,6 +113,7 @@ def main() -> None:
         if not db_file:
             parser.error('database-file must be specified in the config file')
         assert(db_file)
+        Database(db_file).ensure_schema()
         dump_database(db_file)
         sys.exit(0)
 
@@ -140,6 +141,9 @@ def main() -> None:
         database: Database = Database.create(db_file)
     else:
         database = Database(db_file)
+    # Before the REST server and the loop exist, so nothing else holds the
+    # file.  A failure exits the daemon; systemd retries.
+    database.ensure_schema()
 
     assert(hostname)
     airgradientproxy_service = Service(hostname, port, timeout_secs, long_read_secs, pollfreq_secs,

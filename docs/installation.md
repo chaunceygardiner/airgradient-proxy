@@ -95,7 +95,11 @@ curl 'http://localhost:8080/get-version'
 
 The second command should answer `{"version": "1.0"}`.  Within one poll
 interval — 30 seconds at the default settings —
-`curl 'http://localhost:8080/measures/current'` will return a reading.  See [Running the proxy](running.md) for the log and
+`curl 'http://localhost:8080/measures/current'` will return a reading.  Its
+`rco2` (CO2) field joins it 60 to 90 seconds after the start, once there
+are three readings to take a median of; see
+[CO2](rest-api.md#co2-rco2-and-rco2unfiltered).  See
+[Running the proxy](running.md) for the log and
 [Troubleshooting](troubleshooting.md) if nothing arrives.
 
 {: .note }

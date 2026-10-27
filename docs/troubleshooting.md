@@ -61,6 +61,7 @@ sudo -u airgradientproxy /home/airgradientproxy/bin/airgradientproxyd \
 | --- | --- |
 | `archive-interval-secs must be a multiple of poll-frequency-secs` | Fix one of the two; see [`archive-interval-secs`](configuration.md#archive-interval-secs) |
 | A traceback ending in `sqlite3.OperationalError: unable to open database file` | The `airgradientproxy` user cannot write the directory holding [`database-file`](configuration.md#database-file).  A directory that does not exist is not the problem — the daemon creates it — a directory it may not write in is |
+| A traceback through `ensure_schema` ending in `sqlite3.OperationalError: attempt to write a readonly database` | The first start after upgrading to 2.2 adds a column to the database (see [Upgrading](upgrading.md)), and the `airgradientproxy` user cannot write the database file itself |
 
 ## Readings are being saved but no client can reach the proxy
 

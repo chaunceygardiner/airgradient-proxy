@@ -16,6 +16,7 @@ my $SAVED_CURR_READING = 'Saved Curr. Readings';
 my $SAVED_2M_READING = 'Saved 2m Readings';
 my $ARCHIVE_RECORDS_ADDED = 'Archive Records Added';
 my $GC_PASSES = 'Garbage Collections';
+my $COLUMNS_ADDED = 'Database Columns Added';
 my $CONN_TIMEOUTS_RETRYING = 'Conn. timeouts (retrying)';
 my $READ_TIMEOUTS_RETRYING = 'Read timeouts (retrying)';
 my $CONN_TIMEOUTS_SKIPPING = 'Conn. timeouts (skipped reading)';
@@ -95,6 +96,8 @@ while(defined($_ = <STDIN>)) {
         $counts{$ARCHIVE_RECORDS_ADDED} += 1;
     } elsif (/Garbage collected \d+ objects in/) {
         $counts{$GC_PASSES} += 1;
+    } elsif (/Added column \w+ to the Reading table\./) {
+        $counts{$COLUMNS_ADDED} += 1;
     } elsif (/Could not save archive reading to database/) {
         push @archive_insert_errors, $_;
         $errors{$ARCHIVE_INSERT_ERRORS} += 1;

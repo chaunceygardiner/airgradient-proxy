@@ -11,6 +11,7 @@ records to the database.
 import calendar
 import copy
 import gc
+import math
 import time
 
 import requests
@@ -39,6 +40,14 @@ class Service(object):
         self.arcint_secs      = arcint_secs
         self.gc_interval_secs = gc_interval_secs
         self.database         = database
+        # A CO2 reading older than this no longer votes in the median, even if
+        # it is one of the last 3 (see co2_median).  At 30 s polling it is
+        # 135 s, which rides out two missed polls in a row.  The half poll is
+        # margin: a reading is stamped when the sensor answers, so stamps
+        # drift by each read's duration, and without it the oldest survivor
+        # of two missed polls sat exactly on the limit and was dropped
+        # whenever the later read was the slower one.
+        self.co2_age_limit_secs: float = max(120, 3 * pollfreq_secs) + pollfreq_secs / 2
 
         log.debug('Service created')
 
@@ -58,42 +67,58 @@ class Service(object):
         return Service.parse_response(response)
 
     @staticmethod
+    def float_field(j: Dict[str, Any], key: str) -> Optional[float]:
+        """j[key] as a float; None when the monitor omitted it, or sent a
+        value that is not finite (Python's json accepts NaN and Infinity), so
+        it is never stored, averaged or served.  A value that will not convert
+        raises, rejecting the reading."""
+        if key not in j:
+            return None
+        value: float = float(j[key])
+        return value if math.isfinite(value) else None
+
+    @staticmethod
     def parse_response(response: requests.Response) -> Reading:
         try:
             # convert to json
             j: Dict[str, Any] = response.json()
 
+            # rco2 starts out as the monitor's value; do_loop replaces it with
+            # the rolling median and rco2Unfiltered keeps the original.
+            rco2: Optional[float] = Service.float_field(j, 'rco2')
+
             return Reading(
                 measurementTime = Service.utc_now(),
                 serialno        = j['serialno'],
-                wifi            = float(j['wifi']) if 'wifi' in j else None,
-                pm01            = float(j['pm01']) if 'pm01' in j else None,
-                pm02            = float(j['pm02']) if 'pm02' in j else None,
-                pm10            = float(j['pm10']) if 'pm10' in j else None,
-                pm02Compensated = float(j['pm02Compensated']) if 'pm02Compensated' in j else None,
-                pm01Standard    = float(j['pm01Standard']) if 'pm01Standard' in j else None,
-                pm02Standard    = float(j['pm02Standard']) if 'pm02Standard' in j else None,
-                pm10Standard    = float(j['pm10Standard']) if 'pm10Standard' in j else None,
-                rco2            = float(j['rco2']) if 'rco2' in j else None,
-                pm003Count      = float(j['pm003Count']) if 'pm003Count' in j else None,
-                pm005Count      = float(j['pm005Count']) if 'pm005Count' in j else None,
-                pm01Count       = float(j['pm01Count']) if 'pm01Count' in j else None,
-                pm02Count       = float(j['pm02Count']) if 'pm02Count' in j else None,
-                pm50Count       = float(j['pm50Count']) if 'pm50Count' in j else None,
-                pm10Count       = float(j['pm10Count']) if 'pm10Count' in j else None,
-                atmp            = float(j['atmp']) if 'atmp' in j else None,
-                atmpCompensated = float(j['atmpCompensated']) if 'atmpCompensated' in j else None,
-                rhum            = float(j['rhum']) if 'rhum' in j else None,
-                rhumCompensated = float(j['rhumCompensated']) if 'rhumCompensated' in j else None,
-                tvocIndex       = float(j['tvocIndex']) if 'tvocIndex' in j else None,
-                tvocRaw         = float(j['tvocRaw']) if 'tvocRaw' in j else None,
-                noxIndex        = float(j['noxIndex']) if 'noxIndex' in j else None,
-                noxRaw          = float(j['noxRaw']) if 'noxRaw' in j else None,
+                wifi            = Service.float_field(j, 'wifi'),
+                pm01            = Service.float_field(j, 'pm01'),
+                pm02            = Service.float_field(j, 'pm02'),
+                pm10            = Service.float_field(j, 'pm10'),
+                pm02Compensated = Service.float_field(j, 'pm02Compensated'),
+                pm01Standard    = Service.float_field(j, 'pm01Standard'),
+                pm02Standard    = Service.float_field(j, 'pm02Standard'),
+                pm10Standard    = Service.float_field(j, 'pm10Standard'),
+                rco2            = rco2,
+                pm003Count      = Service.float_field(j, 'pm003Count'),
+                pm005Count      = Service.float_field(j, 'pm005Count'),
+                pm01Count       = Service.float_field(j, 'pm01Count'),
+                pm02Count       = Service.float_field(j, 'pm02Count'),
+                pm50Count       = Service.float_field(j, 'pm50Count'),
+                pm10Count       = Service.float_field(j, 'pm10Count'),
+                atmp            = Service.float_field(j, 'atmp'),
+                atmpCompensated = Service.float_field(j, 'atmpCompensated'),
+                rhum            = Service.float_field(j, 'rhum'),
+                rhumCompensated = Service.float_field(j, 'rhumCompensated'),
+                tvocIndex       = Service.float_field(j, 'tvocIndex'),
+                tvocRaw         = Service.float_field(j, 'tvocRaw'),
+                noxIndex        = Service.float_field(j, 'noxIndex'),
+                noxRaw          = Service.float_field(j, 'noxRaw'),
                 boot            = j['boot'] if 'boot' in j else None,
                 bootCount       = j['bootCount'] if 'bootCount' in j else None,
                 ledMode         = j['ledMode'] if 'ledMode' in j else None,
                 firmware        = j['firmware'] if 'firmware' in j else None,
-                model           = j['model'] if 'model' in j else None)
+                model           = j['model'] if 'model' in j else None,
+                rco2Unfiltered  = rco2)
         except Exception as e:
             log.info('parse_response: %r raised exception %r' % (response.text, e))
             raise e
@@ -103,77 +128,59 @@ class Service(object):
         ts = dt.timestamp()
         return "%s (%d)" % (time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime(ts)), ts)
 
+    # The fields compute_avg averages.  Every other field (measurementTime,
+    # serialno, ledMode, firmware, model, boot, bootCount) is taken from the
+    # last reading.
+    AVERAGED_FIELDS: Tuple[str, ...] = (
+        'wifi', 'pm01', 'pm02', 'pm10', 'pm02Compensated', 'pm01Standard',
+        'pm02Standard', 'pm10Standard', 'rco2', 'pm003Count', 'pm005Count',
+        'pm01Count', 'pm02Count', 'pm50Count', 'pm10Count', 'atmp',
+        'atmpCompensated', 'rhum', 'rhumCompensated', 'tvocIndex', 'tvocRaw',
+        'noxIndex', 'noxRaw', 'rco2Unfiltered')
+
     @staticmethod
     def compute_avg(readings: List[Reading]) -> Reading:
-        # We are gauranteed at least one reading.
-        summed_reading: Reading = copy.copy(readings[0])
+        # We are guaranteed at least one reading.
+        avg_reading: Reading = copy.copy(readings[-1])
 
-        for reading in readings[1:]:
-            # These will be overwritten on each iteration.
-            summed_reading.measurementTime = reading.measurementTime
-            summed_reading.serialno        = reading.serialno
-            summed_reading.ledMode         = reading.ledMode
-            summed_reading.firmware        = reading.firmware
-            summed_reading.model           = reading.model
-            summed_reading.boot            = reading.boot
-            summed_reading.bootCount       = reading.bootCount
-
-            # These will be averaged
-            summed_reading.wifi            = summed_reading.wifi + reading.wifi if summed_reading.wifi is not None and reading.wifi is not None else None
-            summed_reading.pm01            = summed_reading.pm01 + reading.pm01 if summed_reading.pm01 is not None and reading.pm01 is not None else None
-            summed_reading.pm02            = summed_reading.pm02 + reading.pm02 if summed_reading.pm02 is not None and reading.pm02 is not None else None
-            summed_reading.pm10            = summed_reading.pm10 + reading.pm10 if summed_reading.pm10 is not None and reading.pm10 is not None else None
-            summed_reading.pm02Compensated = summed_reading.pm02Compensated + reading.pm02Compensated if summed_reading.pm02Compensated is not None and reading.pm02Compensated is not None else None
-            summed_reading.pm01Standard    = summed_reading.pm01Standard + reading.pm01Standard if summed_reading.pm01Standard is not None and reading.pm01Standard is not None else None
-            summed_reading.pm02Standard    = summed_reading.pm02Standard + reading.pm02Standard if summed_reading.pm02Standard is not None and reading.pm02Standard is not None else None
-            summed_reading.pm10Standard    = summed_reading.pm10Standard + reading.pm10Standard if summed_reading.pm10Standard is not None and reading.pm10Standard is not None else None
-            summed_reading.rco2            = summed_reading.rco2 + reading.rco2 if summed_reading.rco2 is not None and reading.rco2 is not None else None
-            summed_reading.pm003Count      = summed_reading.pm003Count + reading.pm003Count if summed_reading.pm003Count is not None and reading.pm003Count is not None else None
-            summed_reading.pm005Count      = summed_reading.pm005Count + reading.pm005Count if summed_reading.pm005Count is not None and reading.pm005Count is not None else None
-            summed_reading.pm01Count       = summed_reading.pm01Count + reading.pm01Count if summed_reading.pm01Count is not None and reading.pm01Count is not None else None
-            summed_reading.pm02Count       = summed_reading.pm02Count + reading.pm02Count if summed_reading.pm02Count is not None and reading.pm02Count is not None else None
-            summed_reading.pm50Count       = summed_reading.pm50Count + reading.pm50Count if summed_reading.pm50Count is not None and reading.pm50Count is not None else None
-            summed_reading.pm10Count       = summed_reading.pm10Count + reading.pm10Count if summed_reading.pm10Count is not None and reading.pm10Count is not None else None
-            summed_reading.atmp            = summed_reading.atmp + reading.atmp if summed_reading.atmp is not None and reading.atmp is not None else None
-            summed_reading.atmpCompensated = summed_reading.atmpCompensated + reading.atmpCompensated if summed_reading.atmpCompensated is not None and reading.atmpCompensated is not None else None
-            summed_reading.rhum            = summed_reading.rhum + reading.rhum if summed_reading.rhum is not None and reading.rhum is not None else None
-            summed_reading.rhumCompensated = summed_reading.rhumCompensated + reading.rhumCompensated if summed_reading.rhumCompensated is not None and reading.rhumCompensated is not None else None
-            summed_reading.tvocIndex       = summed_reading.tvocIndex + reading.tvocIndex if summed_reading.tvocIndex is not None and reading.tvocIndex is not None else None
-            summed_reading.tvocRaw         = summed_reading.tvocRaw + reading.tvocRaw if summed_reading.tvocRaw is not None and reading.tvocRaw is not None else None
-            summed_reading.noxIndex        = summed_reading.noxIndex + reading.noxIndex if summed_reading.noxIndex is not None and reading.noxIndex is not None else None
-            summed_reading.noxRaw          = summed_reading.noxRaw + reading.noxRaw if summed_reading.noxRaw is not None and reading.noxRaw is not None else None
-
-
-        count: float = float(len(readings))
-        avg_reading = copy.copy(summed_reading)
-
-        avg_reading.wifi            = avg_reading.wifi            / count if avg_reading.wifi is not None else None
-        avg_reading.pm01            = avg_reading.pm01            / count if avg_reading.pm01 is not None else None
-        avg_reading.pm02            = avg_reading.pm02            / count if avg_reading.pm02 is not None else None
-        avg_reading.pm10            = avg_reading.pm10            / count if avg_reading.pm10 is not None else None
-        avg_reading.pm02Compensated = avg_reading.pm02Compensated / count if avg_reading.pm02Compensated is not None else None
-        avg_reading.pm01Standard    = avg_reading.pm01Standard    / count if avg_reading.pm01Standard is not None else None
-        avg_reading.pm02Standard    = avg_reading.pm02Standard    / count if avg_reading.pm02Standard is not None else None
-        avg_reading.pm10Standard    = avg_reading.pm10Standard    / count if avg_reading.pm10Standard is not None else None
-        avg_reading.rco2            = avg_reading.rco2            / count if avg_reading.rco2 is not None else None
-        avg_reading.pm003Count      = avg_reading.pm003Count      / count if avg_reading.pm003Count is not None else None
-        avg_reading.pm005Count      = avg_reading.pm005Count      / count if avg_reading.pm005Count is not None else None
-        avg_reading.pm01Count       = avg_reading.pm01Count       / count if avg_reading.pm01Count is not None else None
-        avg_reading.pm02Count       = avg_reading.pm02Count       / count if avg_reading.pm02Count is not None else None
-        avg_reading.pm50Count       = avg_reading.pm50Count       / count if avg_reading.pm50Count is not None else None
-        avg_reading.pm10Count       = avg_reading.pm10Count       / count if avg_reading.pm10Count is not None else None
-
-        avg_reading.atmp            = avg_reading.atmp            / count if avg_reading.atmp is not None else None
-        avg_reading.atmpCompensated = avg_reading.atmpCompensated / count if avg_reading.atmpCompensated is not None else None
-        avg_reading.rhum            = avg_reading.rhum            / count if avg_reading.rhum is not None else None
-        avg_reading.rhumCompensated = avg_reading.rhumCompensated / count if avg_reading.rhumCompensated is not None else None
-
-        avg_reading.tvocIndex       = avg_reading.tvocIndex       / count if avg_reading.tvocIndex is not None else None
-        avg_reading.tvocRaw         = avg_reading.tvocRaw         / count if avg_reading.tvocRaw is not None else None
-        avg_reading.noxIndex        = avg_reading.noxIndex       / count if avg_reading.noxIndex is not None else None
-        avg_reading.noxRaw          = avg_reading.noxRaw          / count if avg_reading.noxRaw is not None else None
+        # Each field is averaged over the readings that carry it, and is None
+        # only when none does: one reading without CO2 (the firmware omits
+        # rco2 when the sensor returns an invalid value, and do_loop withholds
+        # it for the first two readings after a start) must not empty a whole
+        # record's CO2.
+        for field in Service.AVERAGED_FIELDS:
+            values: List[float] = [getattr(r, field) for r in readings if getattr(r, field) is not None]
+            setattr(avg_reading, field, sum(values) / len(values) if values else None)
 
         return avg_reading
+
+    @staticmethod
+    def co2_median(buf: List[Tuple[float, float]], reading: Reading, age_limit_secs: float) -> Reading:
+        """Return a copy of reading whose rco2 is the median of the last 3
+        CO2 values, by count, from readings no older than age_limit_secs; or
+        None until there are 3.  The monitor's CO2 sometimes jumps for exactly
+        one reading, and a median of 3 never passes a lone outlier through, at
+        the cost of serving CO2 about one poll late.
+
+        buf is the caller's state: (timestamp, unfiltered CO2) of recent sane
+        readings, oldest first, updated in place.  The value voted is the
+        reading's rco2Unfiltered, set at parse time; a reading without one
+        gets no rco2 and leaves buf alone.  Every field other than rco2 is
+        returned untouched."""
+        median_reading: Reading = copy.copy(reading)
+        value: Optional[float] = reading.rco2Unfiltered
+        if value is None:
+            median_reading.rco2 = None
+            return median_reading
+
+        ts: float = reading.measurementTime.timestamp()
+        buf[:] = [entry for entry in buf if ts - entry[0] <= age_limit_secs]
+        buf.append((ts, value))
+        # By position, oldest first: buf is never sorted.
+        del buf[:-3]
+
+        median_reading.rco2 = sorted(entry[1] for entry in buf)[1] if len(buf) == 3 else None
+        return median_reading
 
     @staticmethod
     def utc_now() -> datetime:
@@ -186,7 +193,7 @@ class Service(object):
 
     @staticmethod
     def trim_two_minute_readings(two_minute_readings: List[Reading]) -> None:
-        two_minutes_ago: datetime = datetime.now(tz=tz.gettz('UTC')) - timedelta(seconds=120)
+        two_minutes_ago: datetime = Service.utc_now() - timedelta(seconds=120)
         while len(two_minute_readings) > 0 and two_minute_readings[0].measurementTime < two_minutes_ago:
             two_minute_readings.pop(0)
 
@@ -200,52 +207,11 @@ class Service(object):
             return False, 'measurementTime more than 20s off: %f' % delta_seconds
         if reading.serialno is not None and not isinstance(reading.serialno, str):
             return False, 'serialno not instance of str'
-        if reading.wifi is not None and not isinstance(reading.wifi, float):
-            return False, 'wifi not instance of float'
-        if reading.pm01 is not None and not isinstance(reading.pm01, float):
-            return False, 'pm01 not instance of float'
-        if reading.pm02 is not None and not isinstance(reading.pm02, float):
-            return False, 'pm02 not instance of float'
-        if reading.pm10 is not None and not isinstance(reading.pm10, float):
-            return False, 'pm10 not instance of float'
-        if reading.pm02Compensated is not None and not isinstance(reading.pm02Compensated, float):
-            return False, 'pm02Compensated not instance of float'
-        if reading.pm01Standard is not None and not isinstance(reading.pm01Standard, float):
-            return False, 'pm01Standard not instance of float'
-        if reading.pm02Standard is not None and not isinstance(reading.pm02Standard, float):
-            return False, 'pm02Standard not instance of float'
-        if reading.pm10Standard is not None and not isinstance(reading.pm10Standard, float):
-            return False, 'pm10Standard not instance of float'
-        if reading.rco2 is not None and not isinstance(reading.rco2, float):
-            return False, 'rco2 not instance of float'
-        if reading.pm003Count is not None and not isinstance(reading.pm003Count, float):
-            return False, 'pm003Count not instance of float'
-        if reading.pm005Count is not None and not isinstance(reading.pm005Count, float):
-            return False, 'pm005Count not instance of float'
-        if reading.pm01Count is not None and not isinstance(reading.pm01Count, float):
-            return False, 'pm01Count not instance of float'
-        if reading.pm02Count is not None and not isinstance(reading.pm02Count, float):
-            return False, 'pm02Count not instance of float'
-        if reading.pm50Count is not None and not isinstance(reading.pm50Count, float):
-            return False, 'pm50Count not instance of float'
-        if reading.pm10Count is not None and not isinstance(reading.pm10Count, float):
-            return False, 'pm10Count not instance of float'
-        if reading.atmp is not None and not isinstance(reading.atmp, float):
-            return False, 'atmp not instance of float'
-        if reading.atmpCompensated is not None and not isinstance(reading.atmpCompensated, float):
-            return False, 'atmpCompensated not instance of float'
-        if reading.rhum is not None and not isinstance(reading.rhum, float):
-            return False, 'rhum not instance of float'
-        if reading.rhumCompensated is not None and not isinstance(reading.rhumCompensated, float):
-            return False, 'rhumCompensated not instance of float'
-        if reading.tvocIndex is not None and not isinstance(reading.tvocIndex, float):
-            return False, 'tvocIndex not instance of float'
-        if reading.tvocRaw is not None and not isinstance(reading.tvocRaw, float):
-            return False, 'tvocRaw not instance of float'
-        if reading.noxIndex is not None and not isinstance(reading.noxIndex, float):
-            return False, 'noxIndex not instance of float'
-        if reading.noxRaw is not None and not isinstance(reading.noxRaw, float):
-            return False, 'noxRaw not instance of float'
+        # Every averaged field is a float (or absent).
+        for field in Service.AVERAGED_FIELDS:
+            value = getattr(reading, field)
+            if value is not None and not isinstance(value, float):
+                return False, '%s not instance of float' % field
         if reading.boot is not None and not Service.is_int(reading.boot):
             return False, 'boot not instance of int'
         if reading.bootCount is not None and not Service.is_int(reading.bootCount):
@@ -261,10 +227,13 @@ class Service(object):
 
     def secs_to_next_poll(self) -> float:
         now = time.time()
-        next_poll_event = int(now / self.pollfreq_secs) * self.pollfreq_secs + self.pollfreq_secs
+        # Poll slots are the multiples of pollfreq_secs plus pollfreq_offset.
+        # The offset is taken out before rounding down, so the next slot is
+        # found even when now falls between a multiple and its offset slot
+        # (a start, or a read that ran past the multiple); adding it after
+        # rounding skipped that slot and waited up to a poll longer.
+        next_poll_event = (int((now - self.pollfreq_offset) / self.pollfreq_secs) + 1) * self.pollfreq_secs + self.pollfreq_offset
         secs_to_event = next_poll_event - now
-        # Add pollfreq_offset to computed next event.
-        secs_to_event += self.pollfreq_offset
         log.debug('Next poll in %f seconds' % secs_to_event)
         return secs_to_event
 
@@ -274,8 +243,9 @@ class Service(object):
     def do_loop(self) -> None:
         archive_readings   : List[Reading] = []
         two_minute_readings: List[Reading] = []
+        # The CO2 median's state (see co2_median).
+        co2_buf            : List[Tuple[float, float]] = []
 
-        first_time: bool = True
         log.debug('Started main loop.')
         session: Optional[requests.Session] = None
         next_gc_ts: float = time.time() + self.gc_interval_secs
@@ -286,11 +256,10 @@ class Service(object):
         next_arc_ts: float = self.next_archive_boundary()
 
         while True:
-            if first_time:
-                first_time = False
-            else:
-                # sleep until next poll
-                sleep(self.secs_to_next_poll())
+            # Sleep until the next poll, the first one included: polling off
+            # the schedule at a start would put the first two readings ~13 s
+            # apart, inside one CO2 fault, and the median would pass it.
+            sleep(self.secs_to_next_poll())
 
             # Always trim two_minute_readings
             Service.trim_two_minute_readings(two_minute_readings)
@@ -305,6 +274,7 @@ class Service(object):
                 log.debug('Read sensor in %d seconds.' % (Service.utc_now() - start).seconds)
                 sane, reason = Service.is_sane(reading)
                 if sane:
+                    reading = Service.co2_median(co2_buf, reading, self.co2_age_limit_secs)
                     archive_readings.append(reading)
                     two_minute_readings.append(reading)
                     # Save this reading as the current reading

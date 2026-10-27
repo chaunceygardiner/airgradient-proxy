@@ -42,6 +42,14 @@ measure at that instant; asking the proxy for
 the average of the last two minutes, which is what you actually want to
 graph or report.
 
+**A one-reading CO2 spike is voted out.**  The sensor's CO2 sometimes jumps,
+up or down, for exactly one reading, and that one reading becomes the day's
+high or low in every station that records it.  The proxy serves CO2
+(`rco2`) as the median of the last three readings, so a lone outlier never
+reaches any record it writes, at the cost of serving CO2 about one poll
+late.  The value as the sensor reported it is kept alongside, as
+`rco2Unfiltered`; see [CO2](rest-api.md#co2-rco2-and-rco2unfiltered).
+
 **Every reading is checked before it is believed.**  Field types are
 verified — a JSON boolean where an integer belongs is rejected, and a field
 that will not convert to a number is rejected as the response is parsed.  A

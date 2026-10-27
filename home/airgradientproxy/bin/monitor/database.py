@@ -67,6 +67,7 @@ class Database(object):
             ' ledMode                TEXT,'
             ' firmware               TEXT,'
             ' model                  TEXT,'
+            ' rco2Unfiltered         REAL,'
             ' PRIMARY KEY (record_type, timestamp));')
 
         with sqlite3.connect(db_file, timeout=5) as conn:
@@ -75,6 +76,33 @@ class Database(object):
             cursor.close()
 
         return Database(db_file)
+
+    def ensure_schema(self) -> None:
+        """Bring a database made by an earlier release up to this release's
+        schema.  Called once at startup, before the REST server and the polling
+        loop exist (not from __init__, which the REST server runs on every
+        request).  Idempotent; logs only when it changes something.  A failure
+        propagates and the daemon exits: carrying on would fail every save."""
+        added: bool = False
+        with sqlite3.connect(self.db_file, timeout=5) as conn:
+            cursor = conn.cursor()
+            columns: List[str] = [row[1] for row in cursor.execute('PRAGMA table_info(Reading);')]
+            # Added in 2.2.  Last, as in create(), so a migrated table and a
+            # fresh one have the same column order.
+            if 'rco2Unfiltered' not in columns:
+                # The CURRENT and TWO_MINUTE rows an earlier release wrote
+                # carry an unfiltered rco2 and no rco2Unfiltered, which a
+                # client reads as a proxy that does not filter CO2.  Both are
+                # rewritten by the first poll; until then, serve nothing.
+                # Deleted in the same transaction as the ALTER, so a failed
+                # migration leaves them in place.
+                cursor.execute('DELETE FROM Reading WHERE record_type IN (?, ?);',
+                               (RecordType.CURRENT, RecordType.TWO_MINUTE))
+                cursor.execute('ALTER TABLE Reading ADD COLUMN rco2Unfiltered REAL;')
+                added = True
+            cursor.close()
+        if added:
+            log.info('Added column rco2Unfiltered to the Reading table.')
 
     def save_current_reading(self, r: Reading) -> None:
         self.save_reading(RecordType.CURRENT, r)
@@ -92,14 +120,14 @@ class Database(object):
             ' pm01Standard, pm02Standard, pm10Standard, rco2, pm003Count, pm005Count,'
             ' pm01Count, pm02Count, pm50Count, pm10Count, atmp, atmpCompensated, rhum,'
             ' rhumCompensated, tvocIndex, tvocRaw, noxIndex, noxRaw, boot, bootCount,'
-            ' ledMode, firmware, model)'
-            ' VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);')
+            ' ledMode, firmware, model, rco2Unfiltered)'
+            ' VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);')
         insert_reading_values: Tuple[Any, ...] = (
             record_type, stamp, r.serialno, r.wifi, r.pm01, r.pm02, r.pm10, r.pm02Compensated,
             r.pm01Standard, r.pm02Standard, r.pm10Standard, r.rco2, r.pm003Count, r.pm005Count,
             r.pm01Count, r.pm02Count, r.pm50Count, r.pm10Count, r.atmp, r.atmpCompensated,
             r.rhum, r.rhumCompensated, r.tvocIndex, r.tvocRaw, r.noxIndex, r.noxRaw, r.boot,
-            r.bootCount, r.ledMode, r.firmware, r.model)
+            r.bootCount, r.ledMode, r.firmware, r.model, r.rco2Unfiltered)
 
         with sqlite3.connect(self.db_file, timeout=15) as conn:
             cursor = conn.cursor()
@@ -157,7 +185,7 @@ class Database(object):
         select: str = ('SELECT timestamp, serialno, wifi, pm01, pm02, pm10, pm02Compensated, pm01Standard,'
             ' pm02Standard, pm10Standard, rco2, pm003Count, pm005Count, pm01Count, pm02Count, pm50Count,'
             ' pm10Count, atmp, atmpCompensated, rhum, rhumCompensated, tvocIndex, tvocRaw, noxIndex,'
-            ' noxRaw, boot, bootCount, ledMode, firmware, model'
+            ' noxRaw, boot, bootCount, ledMode, firmware, model, rco2Unfiltered'
             ' FROM Reading WHERE record_type = ? AND timestamp > ?')
         select_values: List[Any] = [record_type, since_ts]
         if max_ts is not None:
@@ -207,4 +235,5 @@ class Database(object):
             bootCount              = row[26],
             ledMode                = row[27],
             firmware               = row[28],
-            model                  = row[29])
+            model                  = row[29],
+            rco2Unfiltered         = row[30])

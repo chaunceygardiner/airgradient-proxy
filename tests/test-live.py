@@ -143,6 +143,9 @@ def test_compute_avg(reading: Reading) -> None:
         reading1.noxRaw          = 10.0
         reading2.noxRaw          = 11.0
 
+        reading1.rco2Unfiltered  = 744.0
+        reading2.rco2Unfiltered  = 760.0
+
         readings: List[Reading] = []
         readings.append(reading1)
         readings.append(reading2)
@@ -175,6 +178,7 @@ def test_compute_avg(reading: Reading) -> None:
         assert avg_reading.tvocRaw is not None and math.isclose(avg_reading.tvocRaw, 4.5)
         assert avg_reading.noxIndex == 13
         assert avg_reading.noxRaw is not None and math.isclose(avg_reading.noxRaw, 10.5)
+        assert avg_reading.rco2Unfiltered == 752
         assert avg_reading.boot == reading2.boot
         assert avg_reading.bootCount == reading2.bootCount
         assert avg_reading.ledMode == reading2.ledMode
@@ -243,7 +247,7 @@ def test_convert_to_json(reading1: Reading, reading2: Reading) -> None:
         reading = create_test_reading(parse('2019/12/15T03:43:05UTC', tzinfos=tzinfos))
         json_reading: str = convert_to_json(reading)
 
-        expected = '{"pm01": 0.67, "pm02": 0.23, "pm10": 0.54, "pm01Standard": 0.61, "pm02Standard": 0.22, "pm10Standard": 10.0, "pm003Count": 94.33, "pm005Count": 75.33, "pm01Count": 22.33, "pm02Count": 2.33, "pm50Count": 0.0, "pm10Count": 0.0, "pm02Compensated": 0.9, "atmp": 21.66, "atmpCompensated": 21.36, "rhum": 60.74, "rhumCompensated": 60.44, "rco2": 547.0, "tvocIndex": 98.0, "tvocRaw": 32358.67, "noxIndex": 1.0, "noxRaw": 18311.08, "boot": 14, "bootCount": 14, "wifi": -70.0, "ledMode": "pm", "serialno": "000000000000", "firmware": "3.3.7", "model": "I-9PSL", "measurementTime": "2019-12-15T03:43:05.000000Z"}'
+        expected = '{"pm01": 0.67, "pm02": 0.23, "pm10": 0.54, "pm01Standard": 0.61, "pm02Standard": 0.22, "pm10Standard": 10.0, "pm003Count": 94.33, "pm005Count": 75.33, "pm01Count": 22.33, "pm02Count": 2.33, "pm50Count": 0.0, "pm10Count": 0.0, "pm02Compensated": 0.9, "atmp": 21.66, "atmpCompensated": 21.36, "rhum": 60.74, "rhumCompensated": 60.44, "rco2": 547.0, "tvocIndex": 98.0, "tvocRaw": 32358.67, "noxIndex": 1.0, "noxRaw": 18311.08, "boot": 14, "bootCount": 14, "wifi": -70.0, "ledMode": "pm", "serialno": "000000000000", "firmware": "3.3.7", "model": "I-9PSL", "rco2Unfiltered": 547.0, "measurementTime": "2019-12-15T03:43:05.000000Z"}'
 
         assert loads(json_reading) == loads(expected), 'Expected json: %s, found: %s' % (expected, json_reading)
         print_passed()
